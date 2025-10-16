@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
+import DeleteButton from '../Components/DeleteButton';
 
 type Contact = {
   id: string;
@@ -133,29 +134,13 @@ export default async function Home() {
                 </div>
               </div>
 
-              {/* ---- Bouton Supprimer avec confirmation ---- */}
-              <form
+              {/* ---- Bouton Supprimer (client) avec confirmation ---- */}
+              <DeleteButton
                 action={deleteContact.bind(null, c.id)}
-                onSubmit={(e) => {
-                  if (
-                    !confirm(
-                      `Voulez-vous vraiment supprimer le contact ${
-                        c.first_name ?? ''
-                      } ${c.last_name ?? ''} ?`
-                    )
-                  ) {
-                    e.preventDefault();
-                  }
-                }}
-              >
-                <button
-                  type="submit"
-                  className="text-sm rounded border px-3 py-1 hover:bg-gray-50 text-red-600"
-                  title="Supprimer"
-                >
-                  Supprimer
-                </button>
-              </form>
+                confirmText={`Voulez-vous vraiment supprimer le contact ${
+                  c.first_name ?? ''
+                } ${c.last_name ?? ''} ?`}
+              />
             </div>
           </li>
         ))}
