@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
-import DeleteButton from '../Components/DeleteButton';
+import DeleteButton from '../components/DeleteButton';
 
 type Contact = {
   id: string;
