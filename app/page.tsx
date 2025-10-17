@@ -4,7 +4,7 @@ import RelanceButton from '../components/RelanceButton';
 import { getServerSupabase } from '../utils/supabase/server';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; // ou: export const revalidate = 0;
+export const dynamic = 'force-dynamic'; // évite les soucis de cookies en build
 
 type Contact = {
   id: string;
@@ -63,7 +63,7 @@ export async function generateFollowup(contactId: string) {
   'use server';
   const supabase = await getServerSupabase();
 
-  // Récupère le contact (protégé par RLS)
+  // 1) Charger le contact (protégé par RLS)
   const { data: c, error: getErr } = await supabase
     .from('contact')
     .select('*')
@@ -72,10 +72,11 @@ export async function generateFollowup(contactId: string) {
 
   if (getErr || !c) return;
 
-  // Import dynamique pour éviter les soucis de build
+  // 2) Import dynamique OpenAI (build-friendly)
   const { default: OpenAI } = await import('openai');
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+  // 3) Prompt
   const system = `Tu génères des emails de relance brefs (4-7 lignes), polis et orientés action.
 - Langue: français.
 - Ton: professionnel, chaleureux.
@@ -93,13 +94,14 @@ Objectif: obtenir une réponse (oui/non), idéalement un court call.
 
 Rends l'email PERSONNALISÉ (salut + nom si possible), concis, et avec une phrase de valeur. Donne un sujet et le corps en texte brut.`;
 
+  // 4) Appel modèle
   const resp = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: system },
-      { role: 'user', content: user }
+      { role: 'user', content: user },
     ],
-    temperature: 0.4
+    temperature: 0.4,
   });
 
   const text = resp.choices[0]?.message?.content ?? '';
@@ -112,44 +114,41 @@ Rends l'email PERSONNALISÉ (salut + nom si possible), concis, et avec une phras
   const m2 = text.match(/corps\s*:?\s*([\s\S]+)/i);
   if (m2) body_text = m2[1].trim();
 
+  // 5) Enregistrer le brouillon
   const { error: insErr } = await supabase.from('draft_email').insert({
     contact_id: contactId,
     subject,
-    body_text
+    body_text,
   });
-
   if (insErr) throw new Error(insErr.message);
 
   revalidatePath('/');
 }
 
-/** ---------- Page (exige la connexion) ---------- */
+/** ---------- Page (CRUD + Relance IA) ---------- */
 export default async function Home() {
   const supabase = await getServerSupabase();
 
-  // 1) Vérifie l'utilisateur connecté
+  // Si tu as l’auth/RLS : vérifie l’utilisateur
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
     return (
-      <main className="max-w-3xl mx-auto p-6">
+      <main className="p-0">
         <h1 className="text-2xl font-semibold mb-3">AutoFollowUp — Mini CRM</h1>
         <p className="text-gray-700 mb-4">
           Tu dois être connecté pour voir tes contacts.
         </p>
-        <a
-          href="/login"
-          className="underline text-blue-600 hover:text-blue-800"
-        >
+        <a href="/login" className="underline text-blue-600 hover:text-blue-800">
           Se connecter / Créer un compte
         </a>
       </main>
     );
   }
 
-  // 2) Lis les données protégées par RLS (uniquement celles du user)
+  // Charger contacts & brouillons
   const { data: contacts, error } = await supabase
     .from('contact')
     .select('*')
@@ -168,27 +167,43 @@ export default async function Home() {
   });
 
   return (
-    <main className="max-w-3xl mx-auto p-6">
+    <main className="p-0">
       <h1 className="text-2xl font-semibold">AutoFollowUp — Mini CRM</h1>
       <p className="text-gray-700 mt-2">
         Ajoute/supprime des contacts et génère un brouillon d’email de relance par IA.
       </p>
 
       {/* ---- Formulaire d'ajout ---- */}
-      <section className="mt-6 border rounded p-4">
+      <section className="mt-6 border rounded p-4 bg-white">
         <h2 className="font-medium mb-3">Nouveau contact</h2>
         <form action={addContact} className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-gray-600">Prénom</label>
-            <input name="first_name" type="text" placeholder="Lina" className="mt-1 w-full rounded border p-2" />
+            <input
+              name="first_name"
+              type="text"
+              placeholder="Lina"
+              className="mt-1 w-full rounded border p-2"
+            />
           </div>
           <div>
             <label className="block text-sm text-gray-600">Nom</label>
-            <input name="last_name" type="text" placeholder="Martin" className="mt-1 w-full rounded border p-2" />
+            <input
+              name="last_name"
+              type="text"
+              placeholder="Martin"
+              className="mt-1 w-full rounded border p-2"
+            />
           </div>
           <div className="md:col-span-2">
             <label className="block text-sm text-gray-600">Email *</label>
-            <input name="email" type="email" required placeholder="lina@example.com" className="mt-1 w-full rounded border p-2" />
+            <input
+              name="email"
+              type="email"
+              required
+              placeholder="lina@example.com"
+              className="mt-1 w-full rounded border p-2"
+            />
           </div>
           <div>
             <label className="block text-sm text-gray-600">Statut</label>
@@ -200,13 +215,18 @@ export default async function Home() {
             </select>
           </div>
           <div className="md:col-span-2">
-            <button type="submit" className="rounded bg-black text-white px-4 py-2 hover:bg-gray-800">Ajouter</button>
+            <button
+              type="submit"
+              className="rounded bg-black text-white px-4 py-2 hover:bg-gray-800"
+            >
+              Ajouter
+            </button>
           </div>
         </form>
       </section>
 
       {error && (
-        <div className="mt-4 p-3 border border-red-300 text-red-700 rounded">
+        <div className="mt-4 p-3 border border-red-300 text-red-700 rounded bg-white">
           Erreur de lecture : {error.message}
         </div>
       )}
@@ -215,20 +235,27 @@ export default async function Home() {
       <ul className="mt-6 space-y-4">
         {(contacts as Contact[] | null)?.map((c) => {
           const d = lastDraftByContact.get(c.id);
+
           return (
-            <li key={c.id} className="border rounded p-3">
+            <li key={c.id} className="border rounded p-3 bg-white">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-medium">{c.first_name ?? ''} {c.last_name ?? ''}</div>
+                  <div className="font-medium">
+                    {c.first_name ?? ''} {c.last_name ?? ''}
+                  </div>
                   <div className="text-sm text-gray-600">{c.email}</div>
-                  <div className="text-xs mt-1">Statut : <span className="font-semibold">{c.status}</span></div>
+                  <div className="text-xs mt-1">
+                    Statut : <span className="font-semibold">{c.status}</span>
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
                   <RelanceButton action={generateFollowup.bind(null, c.id)} />
                   <DeleteButton
                     action={deleteContact.bind(null, c.id)}
-                    confirmText={`Voulez-vous vraiment supprimer le contact ${c.first_name ?? ''} ${c.last_name ?? ''} ?`}
+                    confirmText={`Voulez-vous vraiment supprimer le contact ${
+                      c.first_name ?? ''
+                    } ${c.last_name ?? ''} ?`}
                   />
                 </div>
               </div>
@@ -247,7 +274,9 @@ export default async function Home() {
           );
         })}
 
-        {!contacts?.length && <li className="text-gray-600">Aucun contact pour le moment.</li>}
+        {!contacts?.length && (
+          <li className="text-gray-600">Aucun contact pour le moment.</li>
+        )}
       </ul>
     </main>
   );

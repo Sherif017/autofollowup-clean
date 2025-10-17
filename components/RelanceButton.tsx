@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 
 type Props = {
-  action: (formData: FormData) => Promise<void>; // server action bindée
+  action: (formData: FormData) => Promise<void>; // Server Action bindée
   label?: string;
 };
 
@@ -32,4 +32,3 @@ export default function RelanceButton({ action, label = 'Relancer par IA' }: Pro
     </form>
   );
 }
-

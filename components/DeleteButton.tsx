@@ -1,8 +1,7 @@
 'use client';
 
 type Props = {
-  // Une Server Action bindée (ex: deleteContact.bind(null, id))
-  action: (formData: FormData) => void | Promise<void>;
+  action: (formData: FormData) => void | Promise<void>; // Server Action bindée
   confirmText: string;
 };
 
@@ -14,7 +13,7 @@ export default function DeleteButton({ action, confirmText }: Props) {
         formAction={action}
         onClick={(e) => {
           if (!confirm(confirmText)) {
-            e.preventDefault(); // annule l'envoi si l'utilisateur refuse
+            e.preventDefault();
           }
         }}
         className="text-sm rounded border px-3 py-1 hover:bg-gray-50 text-red-600"
