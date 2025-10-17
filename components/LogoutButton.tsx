@@ -2,21 +2,16 @@
 
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
 
 export default function LogoutButton() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
   async function onClick() {
-    setLoading(true);
     await supabase.auth.signOut();
-    setLoading(false);
     router.push('/login');
     router.refresh();
   }
@@ -24,10 +19,10 @@ export default function LogoutButton() {
   return (
     <button
       onClick={onClick}
-      disabled={loading}
-      className="text-sm border rounded px-3 py-1 hover:bg-gray-100 disabled:opacity-50"
+      className="text-sm rounded border px-3 py-1 hover:bg-gray-50"
+      title="Se déconnecter"
     >
-      {loading ? 'Déconnexion...' : 'Se déconnecter'}
+      Se déconnecter
     </button>
   );
 }

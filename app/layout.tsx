@@ -23,53 +23,33 @@ export default async function RootLayout({
 
   return (
     <html lang="fr">
-      <body className="min-h-screen bg-gray-50 text-gray-800">
-        {/* Barre de navigation */}
-        <header className="border-b bg-white shadow-sm sticky top-0 z-50">
-          <div className="max-w-6xl mx-auto flex items-center justify-between px-4 py-3">
-            {/* Logo / Nom produit */}
-            <Link href="/" className="text-lg font-semibold hover:text-gray-700">
+      <body className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="border-b bg-white">
+          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+            <Link href="/" className="font-semibold">
               AutoFollowUp
             </Link>
 
-            {/* Navigation principale */}
-            <nav className="flex items-center gap-6 text-sm font-medium">
-              <Link href="/" className="hover:text-gray-700">
-                Contacts
-              </Link>
-              <Link href="/settings" className="hover:text-gray-700">
-                Paramètres
-              </Link>
-            </nav>
-
-            {/* Authentification */}
-            <div className="flex items-center gap-3">
+            <nav className="flex items-center gap-3 text-sm">
               {user ? (
                 <>
-                  <span className="hidden sm:inline text-gray-600 text-sm">
+                  <span className="text-gray-600 hidden sm:inline">
                     {user.email}
                   </span>
                   <LogoutButton />
                 </>
               ) : (
-                <Link
-                  href="/login"
-                  className="underline text-sm text-blue-600 hover:text-blue-800"
-                >
+                <Link href="/login" className="underline">
                   Se connecter
                 </Link>
               )}
-            </div>
+            </nav>
           </div>
         </header>
 
-        {/* Conteneur central */}
-        <main className="max-w-5xl mx-auto p-6">{children}</main>
-
-        {/* Footer */}
-        <footer className="border-t bg-white text-center text-sm py-4 mt-10 text-gray-500">
-          © {new Date().getFullYear()} AutoFollowUp — Mini CRM IA
-        </footer>
+        {/* Contenu de la page */}
+        {children}
       </body>
     </html>
   );
