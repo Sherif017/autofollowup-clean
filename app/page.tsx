@@ -1,8 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import DeleteButton from '../components/DeleteButton';
 import RelanceButton from '../components/RelanceButton';
-import OpenAI from 'openai';
+import { getServerSupabase } from '../utils/supabase/server';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic'; // ou: export const revalidate = 0;
 
 type Contact = {
   id: string;
@@ -21,49 +23,59 @@ type Draft = {
   created_at: string;
 };
 
-/** ---------- helpers ---------- */
-function getSupabase() {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_ANON_KEY!;
-  return createClient(url, key);
-}
-
 /** ---------- Server Actions ---------- */
 export async function addContact(formData: FormData) {
   'use server';
+  const supabase = await getServerSupabase();
+
   const first_name = String(formData.get('first_name') || '').trim();
   const last_name = String(formData.get('last_name') || '').trim();
   const email = String(formData.get('email') || '').trim();
   const status = (String(formData.get('status') || 'lead') as Contact['status']);
+
   if (!email || !email.includes('@')) return;
-  const supabase = getSupabase();
-  await supabase.from('contact').insert({ first_name, last_name, email, status });
+
+  const { error } = await supabase
+    .from('contact')
+    .insert({ first_name, last_name, email, status });
+
+  if (error) throw new Error(error.message);
+
   revalidatePath('/');
 }
 
 export async function deleteContact(id: string) {
   'use server';
-  const supabase = getSupabase();
-  await supabase.from('contact').delete().eq('id', id);
+  const supabase = await getServerSupabase();
+
+  const { error } = await supabase
+    .from('contact')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw new Error(error.message);
+
   revalidatePath('/');
 }
 
 /** IA – génère un brouillon et l’enregistre dans draft_email */
 export async function generateFollowup(contactId: string) {
   'use server';
+  const supabase = await getServerSupabase();
 
-  const supabase = getSupabase();
-  const { data: c } = await supabase
+  // Récupère le contact (protégé par RLS)
+  const { data: c, error: getErr } = await supabase
     .from('contact')
     .select('*')
     .eq('id', contactId)
     .single();
 
-  if (!c) return;
+  if (getErr || !c) return;
 
+  // Import dynamique pour éviter les soucis de build
+  const { default: OpenAI } = await import('openai');
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  // Prompt simple et efficace pour un email court de relance
   const system = `Tu génères des emails de relance brefs (4-7 lignes), polis et orientés action.
 - Langue: français.
 - Ton: professionnel, chaleureux.
@@ -82,7 +94,7 @@ Objectif: obtenir une réponse (oui/non), idéalement un court call.
 Rends l'email PERSONNALISÉ (salut + nom si possible), concis, et avec une phrase de valeur. Donne un sujet et le corps en texte brut.`;
 
   const resp = await openai.chat.completions.create({
-    model: 'gpt-4o-mini', // modèle léger, rapide et économique
+    model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user }
@@ -91,35 +103,58 @@ Rends l'email PERSONNALISÉ (salut + nom si possible), concis, et avec une phras
   });
 
   const text = resp.choices[0]?.message?.content ?? '';
-  // Petit parse simple: on tente de séparer sujet/texte s'il répond "Sujet: ... \n\n Corps: ..."
   let subject = 'Petit suivi';
   let body_text = text;
 
   const m1 = text.match(/sujet\s*:?\s*(.+)/i);
   if (m1) subject = m1[1].trim();
-  // nettoie si l’IA a mis "corps:"
+
   const m2 = text.match(/corps\s*:?\s*([\s\S]+)/i);
   if (m2) body_text = m2[1].trim();
 
-  await supabase.from('draft_email').insert({
+  const { error: insErr } = await supabase.from('draft_email').insert({
     contact_id: contactId,
     subject,
     body_text
   });
 
+  if (insErr) throw new Error(insErr.message);
+
   revalidatePath('/');
 }
 
-/** ---------- Page ---------- */
+/** ---------- Page (exige la connexion) ---------- */
 export default async function Home() {
-  const supabase = getSupabase();
+  const supabase = await getServerSupabase();
 
+  // 1) Vérifie l'utilisateur connecté
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return (
+      <main className="max-w-3xl mx-auto p-6">
+        <h1 className="text-2xl font-semibold mb-3">AutoFollowUp — Mini CRM</h1>
+        <p className="text-gray-700 mb-4">
+          Tu dois être connecté pour voir tes contacts.
+        </p>
+        <a
+          href="/login"
+          className="underline text-blue-600 hover:text-blue-800"
+        >
+          Se connecter / Créer un compte
+        </a>
+      </main>
+    );
+  }
+
+  // 2) Lis les données protégées par RLS (uniquement celles du user)
   const { data: contacts, error } = await supabase
     .from('contact')
     .select('*')
     .order('created_at', { ascending: false });
 
-  // Récupère le dernier brouillon par contact
   const { data: drafts } = await supabase
     .from('draft_email')
     .select('*')
@@ -127,7 +162,9 @@ export default async function Home() {
 
   const lastDraftByContact = new Map<string, Draft>();
   (drafts ?? []).forEach((d) => {
-    if (!lastDraftByContact.has(d.contact_id)) lastDraftByContact.set(d.contact_id, d as Draft);
+    if (!lastDraftByContact.has(d.contact_id)) {
+      lastDraftByContact.set(d.contact_id, d as Draft);
+    }
   });
 
   return (
@@ -199,7 +236,9 @@ export default async function Home() {
               {/* Dernier brouillon affiché */}
               {d && (
                 <div className="mt-3 rounded border p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500 mb-1">Brouillon IA — {new Date(d.created_at).toLocaleString()}</div>
+                  <div className="text-xs text-gray-500 mb-1">
+                    Brouillon IA — {new Date(d.created_at).toLocaleString()}
+                  </div>
                   <div className="font-semibold mb-1">Objet : {d.subject}</div>
                   <pre className="whitespace-pre-wrap text-sm">{d.body_text}</pre>
                 </div>
