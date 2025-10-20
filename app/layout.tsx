@@ -19,9 +19,13 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const supabase = await getServerSupabase();
+  
+  // ✅ CHANGEMENT UNIQUE : getSession() au lieu de getUser()
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const user = session?.user;
 
   return (
     <html lang="fr">
@@ -34,7 +38,6 @@ export default async function RootLayout({
               <Link href="/" className="font-semibold text-lg">
                 AutoFollowUp
               </Link>
-
               {/* Navigation principale */}
               <nav className="flex items-center gap-5 text-sm">
                 {user && (
@@ -56,7 +59,6 @@ export default async function RootLayout({
                     </Link>
                   </>
                 )}
-
                 {/* Espace utilisateur */}
                 {user ? (
                   <div className="flex items-center gap-3">
@@ -74,15 +76,12 @@ export default async function RootLayout({
             </div>
           </Container>
         </header>
-
         {/* Toast global (succès / erreur) */}
         <ToastFromSearchParams />
-
         {/* Contenu principal */}
         <main className="py-6">
           <Container>{children}</Container>
         </main>
-
         {/* Footer */}
         <footer className="border-t text-center text-xs text-gray-500 py-4 bg-white">
           © {new Date().getFullYear()} AutoFollowUp — Mini CRM propulsé par IA
