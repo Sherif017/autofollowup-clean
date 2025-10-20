@@ -42,9 +42,11 @@ export default function ContactListClient({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return contacts.filter((c) => {
-      const matchName = (c.first_name ?? '' + ' ' + c.last_name ?? '' + ' ' + c.email)
-        .toLowerCase()
-        .includes(q);
+      const matchName = (
+  `${c.first_name ?? ''} ${c.last_name ?? ''} ${c.email ?? ''}`
+)
+  .toLowerCase()
+  .includes(q);
       const matchStatus = !status || c.status === status;
       return matchName && matchStatus;
     });
