@@ -4,6 +4,7 @@ import SubmitButton from '../components/SubmitButton';
 import { getServerSupabase } from '../utils/supabase/server';
 import ContactListClient from '../components/ContactListClient';
 import { sendDraft } from './actions/sendDraft';
+import LandingPage from './landing page/page';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,8 @@ export type Contact = {
   last_name: string | null;
   email: string;
   status: 'lead' | 'prospect' | 'client' | 'perdu';
+  notes: string | null;
+  last_contact_date: string | null;
   created_at: string;
 };
 
@@ -22,6 +25,7 @@ export type Draft = {
   contact_id: string;
   subject: string;
   body_text: string;
+  sent_at: string | null;
   created_at: string;
 };
 
@@ -39,6 +43,7 @@ export async function addContact(formData: FormData) {
   const last_name = String(formData.get('last_name') || '').trim();
   const email = String(formData.get('email') || '').trim();
   const rawStatus = String(formData.get('status') || 'lead').trim();
+  const notes = String(formData.get('notes') || '').trim();
   const status: Contact['status'] =
     ['lead', 'prospect', 'client', 'perdu'].includes(rawStatus as any)
       ? (rawStatus as Contact['status'])
@@ -50,7 +55,7 @@ export async function addContact(formData: FormData) {
 
   const { error } = await supabase
     .from('contact')
-    .insert({ first_name, last_name, email, status });
+    .insert({ first_name, last_name, email, status, notes });
 
   if (error) redirect('/?toast=error_generic');
 
@@ -69,7 +74,7 @@ export async function deleteContact(id: string) {
   redirect('/?toast=contact_deleted');
 }
 
-/** IA – génère un brouillon et l’enregistre dans draft_email */
+/** IA – génère un brouillon et l'enregistre dans draft_email */
 export async function generateFollowup(contactId: string) {
   'use server';
   const supabase = await getServerSupabase();
@@ -142,16 +147,9 @@ export default async function Home() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // ✅ Si pas d'utilisateur, afficher la landing page
   if (!user) {
-    return (
-      <main className="p-0">
-        <h1 className="text-2xl font-semibold mb-3">AutoFollowUp — Mini CRM</h1>
-        <p className="text-gray-700 mb-4">Tu dois être connecté pour voir tes contacts.</p>
-        <a href="/login" className="underline text-blue-600 hover:text-blue-800">
-          Se connecter / Créer un compte
-        </a>
-      </main>
-    );
+    return <LandingPage />;
   }
 
   const { data: contacts, error } = await supabase
@@ -232,6 +230,14 @@ export default async function Home() {
               <option value="client">client</option>
               <option value="perdu">perdu</option>
             </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-600">Notes (optionnel)</label>
+            <textarea
+              name="notes"
+              placeholder="Ex: Intéressé par audit, budget 5k€, appel prévu 15 nov"
+              className="mt-1 w-full rounded border p-2 h-20"
+            />
           </div>
           <div className="md:col-span-2">
             <SubmitButton

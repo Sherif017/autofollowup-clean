@@ -19,13 +19,11 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const supabase = await getServerSupabase();
-  
-  // ✅ CHANGEMENT UNIQUE : getSession() au lieu de getUser()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
 
-  const user = session?.user;
+  // ✅ CORRECTION : Utiliser getUser() au lieu de getSession()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   return (
     <html lang="fr">
@@ -76,12 +74,15 @@ export default async function RootLayout({
             </div>
           </Container>
         </header>
+
         {/* Toast global (succès / erreur) */}
         <ToastFromSearchParams />
+
         {/* Contenu principal */}
         <main className="py-6">
           <Container>{children}</Container>
         </main>
+
         {/* Footer */}
         <footer className="border-t text-center text-xs text-gray-500 py-4 bg-white">
           © {new Date().getFullYear()} AutoFollowUp — Mini CRM propulsé par IA

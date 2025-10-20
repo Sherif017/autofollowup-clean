@@ -50,7 +50,26 @@ export async function sendDraft(draftId: string) {
       console.error('Erreur insertion sent_email:', logError);
     }
 
-    // ✅ Retourner l'objet au lieu de redirect
+    // ✅ Mettre à jour la date du dernier contact
+    const { error: updateError } = await supabase
+      .from('contact')
+      .update({ last_contact_date: new Date().toISOString() })
+      .eq('id', draft.contact.id);
+
+    if (updateError) {
+      console.error('Erreur mise à jour last_contact_date:', updateError);
+    }
+
+    // ✅ AJOUTER : Mettre à jour sent_at dans draft_email
+    const { error: draftUpdateError } = await supabase
+      .from('draft_email')
+      .update({ sent_at: new Date().toISOString() })
+      .eq('id', draft.id);
+
+    if (draftUpdateError) {
+      console.error('Erreur mise à jour sent_at:', draftUpdateError);
+    }
+
     return { success: true, message: 'Email envoyé avec succès' };
   } catch (error: any) {
     console.error('Erreur Resend:', error);
@@ -66,7 +85,6 @@ export async function sendDraft(draftId: string) {
       user_id: user.id,
     });
 
-    // ✅ Retourner l'erreur au lieu de redirect
     return { success: false, error: 'Échec de l\'envoi' };
   }
 }

@@ -6,7 +6,14 @@ import { resendEmail } from '@/app/actions/resendEmail';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export default async function SentDetailPage({ params }: { params: { id: string } }) {
+export default async function SentDetailPage({ 
+  params 
+}: { 
+  params: Promise<{ id: string }> 
+}) {
+  // ✅ AJOUTER : await params
+  const { id } = await params;
+
   const supabase = await getServerSupabase();
   const {
     data: { user },
@@ -17,7 +24,7 @@ export default async function SentDetailPage({ params }: { params: { id: string 
   const { data: email, error } = await supabase
     .from('sent_email')
     .select('*, contact:contact_id (email, first_name, last_name)')
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user.id)
     .single();
 
@@ -33,7 +40,7 @@ export default async function SentDetailPage({ params }: { params: { id: string 
         href="/sent"
         className="inline-flex items-center text-sm text-blue-600 hover:underline mb-4"
       >
-        ← Retour à l’historique
+        ← Retour à l'historique
       </Link>
 
       {/* En-tête du message */}
@@ -48,7 +55,6 @@ export default async function SentDetailPage({ params }: { params: { id: string 
             {email.contact.first_name} {email.contact.last_name}{' '}
             <span className="text-gray-500">({email.contact.email})</span>
           </p>
-
           <p>
             <strong>Envoyé le :</strong>{' '}
             {new Date(email.sent_at ?? email.created_at).toLocaleString('fr-FR', {
@@ -56,7 +62,6 @@ export default async function SentDetailPage({ params }: { params: { id: string 
               timeStyle: 'short',
             })}
           </p>
-
           <p>
             <strong>Statut :</strong>{' '}
             <span
@@ -86,7 +91,7 @@ export default async function SentDetailPage({ params }: { params: { id: string 
 
         {email.error && (
           <div className="mt-4 p-3 rounded bg-red-50 border border-red-200 text-sm text-red-700">
-            <strong>Erreur d’envoi :</strong> {email.error}
+            <strong>Erreur d'envoi :</strong> {email.error}
           </div>
         )}
 

@@ -4,7 +4,6 @@ import { cookies } from 'next/headers';
 export async function getServerSupabase() {
   // ⬅️ cookies() est async en Next 15
   const cookieStore = await cookies();
-
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
@@ -31,6 +30,14 @@ export async function getServerSupabase() {
       },
     },
   });
+
+  // ✅ Forcer getUser() pour éviter l'avertissement de Supabase
+  try {
+    await supabase.auth.getUser();
+  } catch (error) {
+    // Utilisateur non authentifié, c'est normal
+    console.debug('Utilisateur non authentifié');
+  }
 
   return supabase;
 }

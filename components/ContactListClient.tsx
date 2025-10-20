@@ -16,6 +16,21 @@ type Props = {
   onSend: (draftId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
 };
 
+// ✅ Helper pour formater la date du dernier contact
+function formatLastContact(date: string | null): string {
+  if (!date) return 'Jamais contacté';
+  
+  const days = Math.floor(
+    (new Date().getTime() - new Date(date).getTime()) / (1000 * 60 * 60 * 24)
+  );
+  
+  if (days === 0) return 'Aujourd\'hui';
+  if (days === 1) return 'Hier';
+  if (days < 30) return `Il y a ${days} jours`;
+  if (days < 365) return `Il y a ${Math.floor(days / 7)} semaines`;
+  return `Il y a ${Math.floor(days / 365)} ans`;
+}
+
 export default function ContactListClient({
   contacts,
   drafts,
@@ -64,6 +79,9 @@ export default function ContactListClient({
             const draftsForContact = draftsByContact.get(c.id) || [];
             const lastDraft = draftsForContact[0];
 
+            // ✅ Compter les emails envoyés
+            const emailsSent = draftsForContact.filter(d => d.sent_at).length;
+
             return (
               <motion.li
                 key={c.id}
@@ -74,7 +92,7 @@ export default function ContactListClient({
                 className="border rounded p-3 bg-white"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="flex-1">
                     <div className="font-medium">
                       {c.first_name ?? ''} {c.last_name ?? ''}
                     </div>
@@ -82,6 +100,23 @@ export default function ContactListClient({
                     <div className="text-xs mt-1">
                       Statut : <span className="font-semibold">{c.status}</span>
                     </div>
+
+                    {/* ✅ AFFICHAGE DU DERNIER CONTACT */}
+                    <div className="text-xs mt-1 text-gray-500">
+                      📨 Dernier contact : {formatLastContact(c.last_contact_date)}
+                    </div>
+
+                    {/* ✅ AFFICHAGE DU COMPTEUR D'EMAILS ENVOYÉS */}
+                    <div className="text-xs mt-1 text-gray-500">
+                      ✉️ {emailsSent} email{emailsSent > 1 ? 's' : ''} envoyé{emailsSent > 1 ? 's' : ''}
+                    </div>
+                    
+                    {/* ✅ AFFICHAGE DES NOTES */}
+                    {c.notes && (
+                      <div className="text-xs mt-2 p-2 bg-blue-50 rounded border border-blue-200 text-gray-700">
+                        <span className="font-semibold">Notes :</span> {c.notes}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-2">
@@ -93,18 +128,20 @@ export default function ContactListClient({
                   </div>
                 </div>
 
-                {/* Dernier brouillon */}
+                {/* Dernier brouillon - Accordéon */}
                 {lastDraft && (
-                  <div className="mt-3 rounded border p-3 bg-gray-50">
-                    <div className="text-xs text-gray-500 mb-1">
-                      Dernier brouillon IA — {new Date(lastDraft.created_at).toLocaleString()}
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                      📄 Dernier brouillon IA — {new Date(lastDraft.created_at).toLocaleString()}
+                    </summary>
+                    <div className="mt-2 rounded border p-3 bg-gray-50">
+                      <div className="font-semibold mb-2">Objet : {lastDraft.subject}</div>
+                      <pre className="whitespace-pre-wrap text-sm mb-3">{lastDraft.body_text}</pre>
+                      <div>
+                        <SendButton action={() => onSend(lastDraft.id)} />
+                      </div>
                     </div>
-                    <div className="font-semibold mb-1">Objet : {lastDraft.subject}</div>
-                    <pre className="whitespace-pre-wrap text-sm">{lastDraft.body_text}</pre>
-                    <div className="mt-2">
-                      <SendButton action={() => onSend(lastDraft.id)} />
-                    </div>
-                  </div>
+                  </details>
                 )}
 
                 {/* Historique complet des brouillons */}

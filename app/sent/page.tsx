@@ -35,7 +35,6 @@ export default async function SentPage() {
     return <div className="p-6 text-red-600">Erreur chargement des envois.</div>;
   }
 
-  // Typage correct - contact est un array
   type SentEmail = {
     id: string;
     subject: string;
@@ -50,14 +49,38 @@ export default async function SentPage() {
 
   const typedEmails = (sentEmails as SentEmail[]) || [];
 
-  // Helper pour récupérer les infos contact
-  const getContactInfo = (contact: Array<{ email: string; first_name: string; last_name: string }> | null) => {
-    if (!contact || contact.length === 0) {
+  // DEBUG : Affiche la structure des données reçues
+  console.log('=== DEBUG SENT EMAILS ===');
+  console.log('Total emails:', typedEmails.length);
+  typedEmails.forEach((mail, index) => {
+    console.log(`Email ${index}:`, {
+      id: mail.id,
+      subject: mail.subject,
+      contact: mail.contact,
+      contactType: typeof mail.contact,
+      contactIsArray: Array.isArray(mail.contact),
+      contactLength: Array.isArray(mail.contact) ? mail.contact.length : 'N/A',
+    });
+  });
+  console.log('=== FIN DEBUG ===');
+
+  const getContactInfo = (contact: any) => {
+    // Gérer le cas où contact est null ou undefined
+    if (!contact) {
       return { name: 'Inconnu', email: '' };
     }
+
+    // Si c'est un array, prendre le premier élément
+    const contactData = Array.isArray(contact) ? contact[0] : contact;
+
+    // Vérifier que contactData existe et a les propriétés nécessaires
+    if (!contactData || !contactData.first_name || !contactData.last_name) {
+      return { name: 'Inconnu', email: contactData?.email || '' };
+    }
+
     return {
-      name: `${contact[0].first_name} ${contact[0].last_name}`,
-      email: contact[0].email,
+      name: `${contactData.first_name} ${contactData.last_name}`,
+      email: contactData.email || '',
     };
   };
 
@@ -67,42 +90,43 @@ export default async function SentPage() {
       {!typedEmails.length && (
         <p className="text-gray-600">Aucun email envoyé pour l'instant.</p>
       )}
-      <ul className="space-y-3">
+      <ul className="space-y-2">
         {typedEmails.map((mail) => {
           const contactInfo = getContactInfo(mail.contact);
           return (
-            <li
-              key={mail.id}
-              className="border rounded p-3 bg-white flex justify-between items-start"
-            >
-              <div>
-                <div className="font-medium">{mail.subject}</div>
-                <div className="text-sm text-gray-600">
-                  À : {contactInfo.name} ({contactInfo.email})
+            <li key={mail.id}>
+              <details className="border rounded bg-white">
+                <summary className="cursor-pointer p-3 hover:bg-gray-50 flex justify-between items-start gap-3">
+                  <div className="flex-1">
+                    <div className="font-semibold">{mail.subject}</div>
+                    <div className="text-sm text-gray-600">
+                      À : {contactInfo.name} {contactInfo.email && `(${contactInfo.email})`}
+                    </div>
+                  </div>
+                  <span
+                    className={`text-xs px-2 py-1 rounded whitespace-nowrap flex-shrink-0 ${
+                      mail.status === 'sent'
+                        ? 'bg-green-100 text-green-700'
+                        : mail.status === 'failed'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    {mail.status}
+                  </span>
+                </summary>
+                <div className="border-t p-3 bg-gray-50 space-y-2">
+                  <div className="text-xs text-gray-500">
+                    {new Date(mail.created_at).toLocaleString()}
+                  </div>
+                  <Link
+                    href={`/sent/${mail.id}`}
+                    className="inline-block text-xs text-blue-600 hover:underline"
+                  >
+                    Voir détails →
+                  </Link>
                 </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  {new Date(mail.created_at).toLocaleString()}
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span
-                  className={`text-xs px-2 py-1 rounded ${
-                    mail.status === 'sent'
-                      ? 'bg-green-100 text-green-700'
-                      : mail.status === 'failed'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  {mail.status}
-                </span>
-                <Link
-                  href={`/sent/${mail.id}`}
-                  className="text-xs text-blue-600 hover:underline"
-                >
-                  Voir
-                </Link>
-              </div>
+              </details>
             </li>
           );
         })}
