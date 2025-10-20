@@ -1,17 +1,36 @@
-import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 export async function getServerSupabase() {
-  const cookieStore = await cookies(); // Next 15: cookies() async
+  // ⬅️ cookies() est async en Next 15
+  const cookieStore = await cookies();
 
-  const supabaseUrl = process.env.SUPABASE_URL!;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY!;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
-  return createServerClient(supabaseUrl, supabaseKey, {
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('❌ SUPABASE_URL ou SUPABASE_ANON_KEY non définie');
+  }
+
+  const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
-      get: async (name: string) => cookieStore.get(name)?.value,
-      set: async () => {},
-      remove: async () => {},
+      get: (name: string) => cookieStore.get(name)?.value,
+      set: (name: string, value: string, options: any) => {
+        try {
+          cookieStore.set({ name, value, ...options });
+        } catch {
+          // lecture seule
+        }
+      },
+      remove: (name: string, options: any) => {
+        try {
+          cookieStore.set({ name, value: '', ...options });
+        } catch {
+          // lecture seule
+        }
+      },
     },
   });
+
+  return supabase;
 }

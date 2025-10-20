@@ -1,12 +1,14 @@
 import { revalidatePath } from 'next/cache';
-import DeleteButton from '../components/DeleteButton';
-import RelanceButton from '../components/RelanceButton';
+import { redirect } from 'next/navigation';
+import SubmitButton from '../components/SubmitButton';
 import { getServerSupabase } from '../utils/supabase/server';
+import ContactListClient from '../components/ContactListClient';
+import { sendDraft } from './actions/sendDraft';
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; // évite les soucis de cookies en build
+export const dynamic = 'force-dynamic';
 
-type Contact = {
+export type Contact = {
   id: string;
   first_name: string | null;
   last_name: string | null;
@@ -15,13 +17,18 @@ type Contact = {
   created_at: string;
 };
 
-type Draft = {
+export type Draft = {
   id: string;
   contact_id: string;
   subject: string;
   body_text: string;
   created_at: string;
 };
+
+// petite validation d'email
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
 /** ---------- Server Actions ---------- */
 export async function addContact(formData: FormData) {
@@ -31,31 +38,35 @@ export async function addContact(formData: FormData) {
   const first_name = String(formData.get('first_name') || '').trim();
   const last_name = String(formData.get('last_name') || '').trim();
   const email = String(formData.get('email') || '').trim();
-  const status = (String(formData.get('status') || 'lead') as Contact['status']);
+  const rawStatus = String(formData.get('status') || 'lead').trim();
+  const status: Contact['status'] =
+    ['lead', 'prospect', 'client', 'perdu'].includes(rawStatus as any)
+      ? (rawStatus as Contact['status'])
+      : 'lead';
 
-  if (!email || !email.includes('@')) return;
+  if (!email || !isValidEmail(email)) {
+    redirect('/?toast=error_invalid_email');
+  }
 
   const { error } = await supabase
     .from('contact')
     .insert({ first_name, last_name, email, status });
 
-  if (error) throw new Error(error.message);
+  if (error) redirect('/?toast=error_generic');
 
   revalidatePath('/');
+  redirect('/?toast=contact_added');
 }
 
 export async function deleteContact(id: string) {
   'use server';
   const supabase = await getServerSupabase();
 
-  const { error } = await supabase
-    .from('contact')
-    .delete()
-    .eq('id', id);
-
-  if (error) throw new Error(error.message);
+  const { error } = await supabase.from('contact').delete().eq('id', id);
+  if (error) redirect('/?toast=error_generic');
 
   revalidatePath('/');
+  redirect('/?toast=contact_deleted');
 }
 
 /** IA – génère un brouillon et l’enregistre dans draft_email */
@@ -63,20 +74,19 @@ export async function generateFollowup(contactId: string) {
   'use server';
   const supabase = await getServerSupabase();
 
-  // 1) Charger le contact (protégé par RLS)
-  const { data: c, error: getErr } = await supabase
+  // Récupère le contact (protégé par RLS)
+  const { data: c } = await supabase
     .from('contact')
     .select('*')
     .eq('id', contactId)
     .single();
 
-  if (getErr || !c) return;
+  if (!c) redirect('/?toast=error_generic');
 
-  // 2) Import dynamique OpenAI (build-friendly)
+  // Import dynamique OpenAI
   const { default: OpenAI } = await import('openai');
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  // 3) Prompt
   const system = `Tu génères des emails de relance brefs (4-7 lignes), polis et orientés action.
 - Langue: français.
 - Ton: professionnel, chaleureux.
@@ -94,7 +104,6 @@ Objectif: obtenir une réponse (oui/non), idéalement un court call.
 
 Rends l'email PERSONNALISÉ (salut + nom si possible), concis, et avec une phrase de valeur. Donne un sujet et le corps en texte brut.`;
 
-  // 4) Appel modèle
   const resp = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
@@ -110,26 +119,25 @@ Rends l'email PERSONNALISÉ (salut + nom si possible), concis, et avec une phras
 
   const m1 = text.match(/sujet\s*:?\s*(.+)/i);
   if (m1) subject = m1[1].trim();
-
   const m2 = text.match(/corps\s*:?\s*([\s\S]+)/i);
   if (m2) body_text = m2[1].trim();
 
-  // 5) Enregistrer le brouillon
   const { error: insErr } = await supabase.from('draft_email').insert({
     contact_id: contactId,
     subject,
     body_text,
   });
-  if (insErr) throw new Error(insErr.message);
+
+  if (insErr) redirect('/?toast=error_generic');
 
   revalidatePath('/');
+  redirect('/?toast=draft_created');
 }
 
-/** ---------- Page (CRUD + Relance IA) ---------- */
+/** ---------- Page principale ---------- */
 export default async function Home() {
   const supabase = await getServerSupabase();
 
-  // Si tu as l’auth/RLS : vérifie l’utilisateur
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -138,9 +146,7 @@ export default async function Home() {
     return (
       <main className="p-0">
         <h1 className="text-2xl font-semibold mb-3">AutoFollowUp — Mini CRM</h1>
-        <p className="text-gray-700 mb-4">
-          Tu dois être connecté pour voir tes contacts.
-        </p>
+        <p className="text-gray-700 mb-4">Tu dois être connecté pour voir tes contacts.</p>
         <a href="/login" className="underline text-blue-600 hover:text-blue-800">
           Se connecter / Créer un compte
         </a>
@@ -148,7 +154,6 @@ export default async function Home() {
     );
   }
 
-  // Charger contacts & brouillons
   const { data: contacts, error } = await supabase
     .from('contact')
     .select('*')
@@ -159,22 +164,36 @@ export default async function Home() {
     .select('*')
     .order('created_at', { ascending: false });
 
-  const lastDraftByContact = new Map<string, Draft>();
-  (drafts ?? []).forEach((d) => {
-    if (!lastDraftByContact.has(d.contact_id)) {
-      lastDraftByContact.set(d.contact_id, d as Draft);
-    }
-  });
-
   return (
-    <main className="p-0">
-      <h1 className="text-2xl font-semibold">AutoFollowUp — Mini CRM</h1>
-      <p className="text-gray-700 mt-2">
-        Ajoute/supprime des contacts et génère un brouillon d’email de relance par IA.
-      </p>
+    <main className="p-0 space-y-6">
+      {/* ---- Titre + boutons Import / Export ---- */}
+      <div className="flex flex-wrap justify-between items-center mb-2 gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">AutoFollowUp — Mini CRM</h1>
+          <p className="text-gray-700 mt-1 text-sm">
+            Ajoute ou gère tes contacts, génère des relances IA, importe ou exporte des listes CSV.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <a
+            href="/api/export-contacts"
+            className="bg-green-600 text-white text-sm px-4 py-2 rounded hover:bg-green-700 shadow-sm transition"
+          >
+            ⬇️ Exporter mes contacts
+          </a>
+
+          <a
+            href="/import"
+            className="bg-blue-600 text-white text-sm px-4 py-2 rounded hover:bg-blue-700 shadow-sm transition"
+          >
+            📤 Importer un fichier CSV
+          </a>
+        </div>
+      </div>
 
       {/* ---- Formulaire d'ajout ---- */}
-      <section className="mt-6 border rounded p-4 bg-white">
+      <section className="border rounded p-4 bg-white shadow-sm">
         <h2 className="font-medium mb-3">Nouveau contact</h2>
         <form action={addContact} className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
@@ -215,69 +234,29 @@ export default async function Home() {
             </select>
           </div>
           <div className="md:col-span-2">
-            <button
-              type="submit"
-              className="rounded bg-black text-white px-4 py-2 hover:bg-gray-800"
-            >
-              Ajouter
-            </button>
+            <SubmitButton
+              idleLabel="Ajouter"
+              pendingLabel="Ajout…"
+              className="bg-black text-white hover:bg-gray-800"
+            />
           </div>
         </form>
       </section>
 
       {error && (
-        <div className="mt-4 p-3 border border-red-300 text-red-700 rounded bg-white">
+        <div className="p-3 border border-red-300 text-red-700 rounded bg-white">
           Erreur de lecture : {error.message}
         </div>
       )}
 
-      {/* ---- Liste des contacts + actions ---- */}
-      <ul className="mt-6 space-y-4">
-        {(contacts as Contact[] | null)?.map((c) => {
-          const d = lastDraftByContact.get(c.id);
-
-          return (
-            <li key={c.id} className="border rounded p-3 bg-white">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-medium">
-                    {c.first_name ?? ''} {c.last_name ?? ''}
-                  </div>
-                  <div className="text-sm text-gray-600">{c.email}</div>
-                  <div className="text-xs mt-1">
-                    Statut : <span className="font-semibold">{c.status}</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <RelanceButton action={generateFollowup.bind(null, c.id)} />
-                  <DeleteButton
-                    action={deleteContact.bind(null, c.id)}
-                    confirmText={`Voulez-vous vraiment supprimer le contact ${
-                      c.first_name ?? ''
-                    } ${c.last_name ?? ''} ?`}
-                  />
-                </div>
-              </div>
-
-              {/* Dernier brouillon affiché */}
-              {d && (
-                <div className="mt-3 rounded border p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500 mb-1">
-                    Brouillon IA — {new Date(d.created_at).toLocaleString()}
-                  </div>
-                  <div className="font-semibold mb-1">Objet : {d.subject}</div>
-                  <pre className="whitespace-pre-wrap text-sm">{d.body_text}</pre>
-                </div>
-              )}
-            </li>
-          );
-        })}
-
-        {!contacts?.length && (
-          <li className="text-gray-600">Aucun contact pour le moment.</li>
-        )}
-      </ul>
+      {/* ---- Liste filtrable + brouillons IA ---- */}
+      <ContactListClient
+        contacts={(contacts ?? []) as Contact[]}
+        drafts={(drafts ?? []) as Draft[]}
+        onGenerate={generateFollowup}
+        onDelete={deleteContact}
+        onSend={sendDraft}
+      />
     </main>
   );
 }
