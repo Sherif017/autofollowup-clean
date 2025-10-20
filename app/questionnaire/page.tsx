@@ -187,7 +187,7 @@ export default function QuestionnairePage() {
                 {/* Radio Options */}
                 {'options' in question && question.id !== 'pain_points' && question.id !== 'tools' && question.id !== 'features' && (
                   <div className="space-y-3">
-                    {question.options?.map((option) => (
+                    {question.options?.map((option: any) => (
                       <label
                         key={option.value}
                         className="flex items-center p-3 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-blue-600 hover:bg-blue-50 transition"
@@ -202,7 +202,7 @@ export default function QuestionnairePage() {
                         />
                         <div className="ml-3">
                           <p className="font-medium text-gray-800">{option.label}</p>
-                          {option.desc && <p className="text-sm text-gray-600">{option.desc}</p>}
+                          {('desc' in option && option.desc) && <p className="text-sm text-gray-600">{option.desc}</p>}
                         </div>
                       </label>
                     ))}
@@ -267,10 +267,10 @@ export default function QuestionnairePage() {
                 {/* Contact Fields */}
                 {question.id === 'contact' && 'fields' in question && (
                   <div className="space-y-4">
-                    {question.fields?.map((field) => (
+                    {question.fields?.map((field: any) => (
                       <div key={field.key}>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {field.label} {field.required && '*'}
+                          {field.label} {('required' in field && field.required) && '*'}
                         </label>
                         <input
                           type={field.key === 'email' ? 'email' : field.key === 'phone' ? 'tel' : 'text'}
